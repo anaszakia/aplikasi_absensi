@@ -4,6 +4,7 @@ import 'package:absensi_app/services/api_service.dart';
 import 'attendance_history_page.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart'; // Import untuk inisialisasi locale
+import 'camera_page.dart';
 
 class AttendancePage extends StatefulWidget {
   const AttendancePage({super.key});
@@ -18,6 +19,8 @@ class _AttendancePageState extends State<AttendancePage> {
   String? messageType;
   DateTime now = DateTime.now();
   bool isDateInitialized = false;
+  // Tambahkan variable untuk nama user (contoh)
+  String userName = ""; // Inisialisasi dengan string kosong
 
   // Warna tema aplikasi
   final Color primaryColor = Color(0xFFE53935); // Merah
@@ -30,9 +33,19 @@ class _AttendancePageState extends State<AttendancePage> {
   void initState() {
     super.initState();
     _initializeDateFormatting();
-
-    // Timer untuk update waktu setiap detik
     _startClock();
+    _loadUserData(); // Tambahkan pemanggilan fungsi untuk memuat data user
+  }
+
+  // Fungsi untuk memuat data user dari API
+  Future<void> _loadUserData() async {
+    final userData = await ApiService.getUser();
+    if (userData != null && mounted) {
+      setState(() {
+        userName =
+            userData['name'] ?? "Pengguna"; // Ambil nama user dari response API
+      });
+    }
   }
 
   // Metode untuk menginisialisasi locale data
@@ -77,21 +90,53 @@ class _AttendancePageState extends State<AttendancePage> {
       loading = true;
       message = null;
     });
-    final location = await _getLocation();
-    if (location == null) {
+
+    try {
+      // Buka kamera untuk foto selfie
+      final String? photoPath = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => CameraPage(isCheckIn: true)),
+      );
+
+      // Tambahkan debugging
+      print("photoPath yang diterima: $photoPath");
+
+      // Jika user membatalkan pengambilan foto
+      if (photoPath == null) {
+        setState(() {
+          loading = false;
+          message = 'Absen Masuk dibatalkan';
+          messageType = 'error';
+        });
+        return;
+      }
+
+      // Ambil lokasi
+      final location = await _getLocation();
+      if (location == null) {
+        setState(() {
+          loading = false;
+          message = 'Gagal mendapatkan lokasi';
+          messageType = 'error';
+        });
+        return;
+      }
+
+      // Kirim data absensi dengan foto
+      final result = await ApiService.checkIn(location, photoPath);
       setState(() {
         loading = false;
-        message = 'Gagal mendapatkan lokasi';
+        message =
+            result['success'] ? 'Absen Masuk berhasil' : result['message'];
+        messageType = result['success'] ? 'success' : 'error';
+      });
+    } catch (e) {
+      setState(() {
+        loading = false;
+        message = 'Terjadi kesalahan: $e';
         messageType = 'error';
       });
-      return;
     }
-    final success = await ApiService.checkIn(location);
-    setState(() {
-      loading = false;
-      message = success ? 'Absen Masuk berhasil' : 'Absen Masuk gagal';
-      messageType = success ? 'success' : 'error';
-    });
   }
 
   Future<void> _checkOut() async {
@@ -99,21 +144,53 @@ class _AttendancePageState extends State<AttendancePage> {
       loading = true;
       message = null;
     });
-    final location = await _getLocation();
-    if (location == null) {
+
+    try {
+      // Buka kamera untuk foto selfie
+      final String? photoPath = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => CameraPage(isCheckIn: false)),
+      );
+
+      // Tambahkan debugging
+      print("photoPath yang diterima: $photoPath");
+
+      // Jika user membatalkan pengambilan foto
+      if (photoPath == null) {
+        setState(() {
+          loading = false;
+          message = 'Absen Pulang dibatalkan';
+          messageType = 'error';
+        });
+        return;
+      }
+
+      // Ambil lokasi
+      final location = await _getLocation();
+      if (location == null) {
+        setState(() {
+          loading = false;
+          message = 'Gagal mendapatkan lokasi';
+          messageType = 'error';
+        });
+        return;
+      }
+
+      // Kirim data absensi dengan foto
+      final result = await ApiService.checkOut(location, photoPath);
       setState(() {
         loading = false;
-        message = 'Gagal mendapatkan lokasi';
+        message =
+            result['success'] ? 'Absen Pulang berhasil' : result['message'];
+        messageType = result['success'] ? 'success' : 'error';
+      });
+    } catch (e) {
+      setState(() {
+        loading = false;
+        message = 'Terjadi kesalahan: $e';
         messageType = 'error';
       });
-      return;
     }
-    final success = await ApiService.checkOut(location);
-    setState(() {
-      loading = false;
-      message = success ? 'Absen Pulang berhasil' : 'Absen Pulang gagal';
-      messageType = success ? 'success' : 'error';
-    });
   }
 
   @override
@@ -220,6 +297,19 @@ class _AttendancePageState extends State<AttendancePage> {
                                   ),
                                 ),
                               ],
+                            ),
+                            // Tambahkan welcome message di bawah tanggal
+                            SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              child: Text(
+                                "Selamat Datang $userName, Silahkan Absensi untuk hari ini !",
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
                             ),
                           ],
                         ),
