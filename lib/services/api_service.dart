@@ -1,14 +1,14 @@
 import 'dart:convert';
-import 'dart:html' as html;
+import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:async';
+// For image picker
 
 class ApiService {
-  static const String baseUrl = 'http://192.168.0.106:8000/api';
+  static const String baseUrl = 'https://absen.ardhancreative.com/api';
 
-  // Fungsi untuk login
+  // Fungsi untuk login (unchanged)
   static Future<String?> login(String email, String password) async {
     try {
       final response = await http.post(
@@ -35,7 +35,7 @@ class ApiService {
     return null;
   }
 
-  // Fungsi untuk mendapatkan data user
+  // Fungsi untuk mendapatkan data user (unchanged)
   static Future<Map<String, dynamic>?> getUser() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -64,7 +64,7 @@ class ApiService {
   // Metode untuk check-in yang menangani web dan mobile
   static Future<Map<String, dynamic>> checkIn(
     String location,
-    dynamic photo,
+    dynamic photo, // Can be File (mobile) or base64 string (web)
   ) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
@@ -75,24 +75,14 @@ class ApiService {
 
     try {
       if (kIsWeb) {
-        // Jika photo adalah URL blob, konversi ke base64 terlebih dahulu
-        if (photo is String && photo.startsWith('blob:')) {
-          try {
-            final base64Photo = await _convertBlobToBase64(photo);
-            if (base64Photo != null) {
-              return await _checkInWeb(token, location, base64Photo);
-            } else {
-              return {'success': false, 'message': 'Gagal mengkonversi foto'};
-            }
-          } catch (e) {
-            print('Error konversi blob ke base64: $e');
-            return {'success': false, 'message': 'Error konversi foto: $e'};
-          }
-        } else {
-          // Jika sudah dalam format base64
-          return await _checkInWeb(token, location, photo);
+        // For web, photo should already be base64
+        String photoBase64 = photo is String ? photo : '';
+        if (!photoBase64.startsWith('data:image')) {
+          photoBase64 = 'data:image/jpeg;base64,$photoBase64';
         }
+        return await _checkInWeb(token, location, photoBase64);
       } else {
+        // For mobile, photo should be a File
         return await _checkInMobile(token, location, photo);
       }
     } catch (e) {
@@ -104,7 +94,7 @@ class ApiService {
   // Metode untuk check-out yang menangani web dan mobile
   static Future<Map<String, dynamic>> checkOut(
     String location,
-    dynamic photo,
+    dynamic photo, // Can be File (mobile) or base64 string (web)
   ) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
@@ -115,24 +105,14 @@ class ApiService {
 
     try {
       if (kIsWeb) {
-        // Jika photo adalah URL blob, konversi ke base64 terlebih dahulu
-        if (photo is String && photo.startsWith('blob:')) {
-          try {
-            final base64Photo = await _convertBlobToBase64(photo);
-            if (base64Photo != null) {
-              return await _checkOutWeb(token, location, base64Photo);
-            } else {
-              return {'success': false, 'message': 'Gagal mengkonversi foto'};
-            }
-          } catch (e) {
-            print('Error konversi blob ke base64: $e');
-            return {'success': false, 'message': 'Error konversi foto: $e'};
-          }
-        } else {
-          // Jika sudah dalam format base64
-          return await _checkOutWeb(token, location, photo);
+        // For web, photo should already be base64
+        String photoBase64 = photo is String ? photo : '';
+        if (!photoBase64.startsWith('data:image')) {
+          photoBase64 = 'data:image/jpeg;base64,$photoBase64';
         }
+        return await _checkOutWeb(token, location, photoBase64);
       } else {
+        // For mobile, photo should be a File
         return await _checkOutMobile(token, location, photo);
       }
     } catch (e) {
@@ -141,222 +121,166 @@ class ApiService {
     }
   }
 
-  // Fungsi untuk mengkonversi URL blob ke base64
-  static Future<String?> _convertBlobToBase64(String blobUrl) async {
-    try {
-      // Metode ini hanya berfungsi di lingkungan web
-      if (!kIsWeb) {
-        throw Exception('Konversi blob hanya tersedia di web');
-      }
-
-      // Buat XHR request untuk mengambil blob
-      final request = html.HttpRequest();
-      final completer = Completer<String>();
-
-      request.open('GET', blobUrl, async: true);
-      request.responseType = 'blob';
-
-      request.onLoad.listen((e) {
-        if (request.status == 200) {
-          final blob = request.response as html.Blob;
-          final reader = html.FileReader();
-
-          reader.onLoad.listen((e) {
-            final result = reader.result as String;
-            completer.complete(result);
-          });
-
-          reader.onError.listen((e) {
-            completer.completeError('Error membaca blob: ${e.toString()}');
-          });
-
-          reader.readAsDataUrl(blob);
-        } else {
-          completer.completeError('HTTP error: ${request.status}');
-        }
-      });
-
-      request.onError.listen((e) {
-        completer.completeError('Error request: ${e.toString()}');
-      });
-
-      request.send();
-      return await completer.future;
-    } catch (e) {
-      print('Error konversi blob ke base64: $e');
-      return null;
-    }
-  }
-
   // Implementasi checkIn untuk mobile
   static Future<Map<String, dynamic>> _checkInMobile(
     String token,
     String location,
-    String photoPath,
+    dynamic photoFile, // Bisa String (path) atau File
   ) async {
-    var request = http.MultipartRequest(
-      'POST',
-      Uri.parse('$baseUrl/attendance/check-in'),
-    );
-
-    request.headers.addAll({
-      'Accept': 'application/json',
-      'Authorization': 'Bearer $token',
-    });
-
-    request.fields['location'] = location;
-
-    // Tambahkan file foto
     try {
-      request.files.add(await http.MultipartFile.fromPath('photo', photoPath));
-    } catch (e) {
-      print('Error saat menambahkan file foto: $e');
-      return {'success': false, 'message': 'Error saat menambahkan foto: $e'};
-    }
-
-    // Kirim request
-    try {
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-
-      print(
-        'Response check-in mobile: ${response.statusCode} - ${response.body}',
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/attendance/check-in'),
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {'success': true, 'data': data};
-      } else {
-        try {
-          final errorData = jsonDecode(response.body);
-          return {
-            'success': false,
-            'message': errorData['message'] ?? 'Check-in gagal',
-          };
-        } catch (e) {
-          return {
-            'success': false,
-            'message': 'Check-in gagal: ${response.statusCode}',
-          };
-        }
-      }
-    } catch (e) {
-      print('Error saat mengirim request check-in: $e');
-      return {'success': false, 'message': 'Error saat mengirim request: $e'};
-    }
-  }
-
-  // Implementasi checkOut untuk mobile
-  static Future<Map<String, dynamic>> _checkOutMobile(
-    String token,
-    String location,
-    String photoPath,
-  ) async {
-    var request = http.MultipartRequest(
-      'POST',
-      Uri.parse('$baseUrl/attendance/check-out'),
-    );
-
-    request.headers.addAll({
-      'Accept': 'application/json',
-      'Authorization': 'Bearer $token',
-    });
-
-    request.fields['location'] = location;
-
-    // Tambahkan file foto
-    try {
-      request.files.add(await http.MultipartFile.fromPath('photo', photoPath));
-    } catch (e) {
-      print('Error saat menambahkan file foto: $e');
-      return {'success': false, 'message': 'Error saat menambahkan foto: $e'};
-    }
-
-    // Kirim request
-    try {
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-
-      print(
-        'Response check-out mobile: ${response.statusCode} - ${response.body}',
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return {'success': true, 'data': data};
-      } else {
-        try {
-          final errorData = jsonDecode(response.body);
-          return {
-            'success': false,
-            'message': errorData['message'] ?? 'Check-out gagal',
-          };
-        } catch (e) {
-          return {
-            'success': false,
-            'message': 'Check-out gagal: ${response.statusCode}',
-          };
-        }
-      }
-    } catch (e) {
-      print('Error saat mengirim request check-out: $e');
-      return {'success': false, 'message': 'Error saat mengirim request: $e'};
-    }
-  }
-
-  // Implementasi checkIn untuk web
-  static Future<Map<String, dynamic>> _checkInWeb(
-    String token,
-    String location,
-    String photoBase64,
-  ) async {
-    // Pastikan format base64 benar
-    if (!photoBase64.startsWith('data:image')) {
-      photoBase64 = 'data:image/jpeg;base64,' + photoBase64;
-    }
-
-    final response = await http.post(
-      Uri.parse('$baseUrl/attendance/check-in'),
-      headers: {
+      request.headers.addAll({
         'Accept': 'application/json',
-        'Content-Type': 'application/json',
         'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({'location': location, 'photo': photoBase64}),
-    );
+      });
 
-    print('Response check-in web: ${response.statusCode} - ${response.body}');
+      request.fields['location'] = location;
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      return {'success': true, 'data': data};
-    } else {
-      try {
+      // Add photo file - PERBAIKAN
+      if (photoFile != null) {
+        File file;
+        if (photoFile is String) {
+          // Jika yang diterima adalah path string
+          file = File(photoFile);
+        } else if (photoFile is File) {
+          // Jika sudah berupa File
+          file = photoFile;
+        } else {
+          throw Exception('Tipe file tidak dikenali');
+        }
+
+        final fileStream = file.openRead();
+        final length = await file.length();
+
+        request.files.add(
+          http.MultipartFile(
+            'photo',
+            fileStream,
+            length,
+            filename: DateTime.now().millisecondsSinceEpoch.toString() + '.jpg',
+          ),
+        );
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'data': data};
+      } else {
         final errorData = jsonDecode(response.body);
         return {
           'success': false,
           'message': errorData['message'] ?? 'Check-in gagal',
         };
-      } catch (e) {
-        return {
-          'success': false,
-          'message': 'Check-in gagal: ${response.statusCode}',
-        };
       }
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
     }
   }
 
-  // Implementasi checkOut untuk web
+  // Implementasi checkOut untuk mobile - PERBAIKAN
+  static Future<Map<String, dynamic>> _checkOutMobile(
+    String token,
+    String location,
+    dynamic photoFile, // Bisa String (path) atau File
+  ) async {
+    try {
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/attendance/check-out'),
+      );
+
+      request.headers.addAll({
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      });
+
+      request.fields['location'] = location;
+
+      // Add photo file - PERBAIKAN
+      if (photoFile != null) {
+        File file;
+        if (photoFile is String) {
+          // Jika yang diterima adalah path string
+          file = File(photoFile);
+        } else if (photoFile is File) {
+          // Jika sudah berupa File
+          file = photoFile;
+        } else {
+          throw Exception('Tipe file tidak dikenali');
+        }
+
+        final fileStream = file.openRead();
+        final length = await file.length();
+
+        request.files.add(
+          http.MultipartFile(
+            'photo',
+            fileStream,
+            length,
+            filename: DateTime.now().millisecondsSinceEpoch.toString() + '.jpg',
+          ),
+        );
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'data': data};
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': errorData['message'] ?? 'Check-out gagal',
+        };
+      }
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
+  // Implementasi checkIn untuk web (unchanged)
+  static Future<Map<String, dynamic>> _checkInWeb(
+    String token,
+    String location,
+    String photoBase64,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/attendance/check-in'),
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({'location': location, 'photo': photoBase64}),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return {'success': true, 'data': data};
+    } else {
+      final errorData = jsonDecode(response.body);
+      return {
+        'success': false,
+        'message': errorData['message'] ?? 'Check-in gagal',
+      };
+    }
+  }
+
+  // Implementasi checkOut untuk web (unchanged)
   static Future<Map<String, dynamic>> _checkOutWeb(
     String token,
     String location,
     String photoBase64,
   ) async {
-    // Pastikan format base64 benar
-    if (!photoBase64.startsWith('data:image')) {
-      photoBase64 = 'data:image/jpeg;base64,' + photoBase64;
-    }
-
     final response = await http.post(
       Uri.parse('$baseUrl/attendance/check-out'),
       headers: {
@@ -367,28 +291,19 @@ class ApiService {
       body: jsonEncode({'location': location, 'photo': photoBase64}),
     );
 
-    print('Response check-out web: ${response.statusCode} - ${response.body}');
-
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
       return {'success': true, 'data': data};
     } else {
-      try {
-        final errorData = jsonDecode(response.body);
-        return {
-          'success': false,
-          'message': errorData['message'] ?? 'Check-out gagal',
-        };
-      } catch (e) {
-        return {
-          'success': false,
-          'message': 'Check-out gagal: ${response.statusCode}',
-        };
-      }
+      final errorData = jsonDecode(response.body);
+      return {
+        'success': false,
+        'message': errorData['message'] ?? 'Check-out gagal',
+      };
     }
   }
 
-  // Fungsi untuk mendapatkan data absensi hari ini
+  // Fungsi untuk mendapatkan data absensi hari ini (unchanged)
   static Future<Map<String, dynamic>?> getTodayAttendance() async {
     try {
       SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -401,10 +316,6 @@ class ApiService {
           'Authorization': 'Bearer $token',
           'Accept': 'application/json',
         },
-      );
-
-      print(
-        'Response get attendance today: ${response.statusCode} - ${response.body}',
       );
 
       if (response.statusCode == 200) {

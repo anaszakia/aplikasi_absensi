@@ -5,6 +5,7 @@ import 'attendance_history_page.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart'; // Import untuk inisialisasi locale
 import 'camera_page.dart';
+import 'dart:io';
 
 class AttendancePage extends StatefulWidget {
   const AttendancePage({super.key});
@@ -111,6 +112,9 @@ class _AttendancePageState extends State<AttendancePage> {
         return;
       }
 
+      // Konversi string path ke File object
+      final File photoFile = File(photoPath);
+
       // Ambil lokasi
       final location = await _getLocation();
       if (location == null) {
@@ -122,8 +126,8 @@ class _AttendancePageState extends State<AttendancePage> {
         return;
       }
 
-      // Kirim data absensi dengan foto
-      final result = await ApiService.checkIn(location, photoPath);
+      // Kirim data absensi dengan foto sebagai File, bukan String
+      final result = await ApiService.checkIn(location, photoFile.path);
       setState(() {
         loading = false;
         message =
@@ -159,11 +163,14 @@ class _AttendancePageState extends State<AttendancePage> {
       if (photoPath == null) {
         setState(() {
           loading = false;
-          message = 'Absen Pulang dibatalkan';
+          message = 'Absen Masuk dibatalkan';
           messageType = 'error';
         });
         return;
       }
+
+      // Konversi string path ke File object
+      final File photoFile = File(photoPath);
 
       // Ambil lokasi
       final location = await _getLocation();
@@ -176,8 +183,8 @@ class _AttendancePageState extends State<AttendancePage> {
         return;
       }
 
-      // Kirim data absensi dengan foto
-      final result = await ApiService.checkOut(location, photoPath);
+      // Kirim data absensi dengan foto sebagai File, bukan String
+      final result = await ApiService.checkOut(location, photoFile.path);
       setState(() {
         loading = false;
         message =
@@ -300,7 +307,7 @@ class _AttendancePageState extends State<AttendancePage> {
                             ),
                             // Tambahkan welcome message di bawah tanggal
                             SizedBox(height: 10),
-                            Container(
+                            SizedBox(
                               width: double.infinity,
                               child: Text(
                                 "Selamat Datang $userName, Silahkan Absensi untuk hari ini !",

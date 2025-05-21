@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
-import '../main.dart'; // Import main.dart untuk mengakses navigatorKey
+// Import main.dart untuk mengakses navigatorKey
 
 class CameraPage extends StatefulWidget {
   final bool isCheckIn;
